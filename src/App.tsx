@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Animal, Activity } from './types';
 import { INITIAL_ANIMALS, INITIAL_ACTIVITIES, DEMO_ANIMALS, DEMO_ACTIVITIES } from './data/mockData';
 import { Navbar } from './components/layout/Navbar';
@@ -16,15 +16,17 @@ import { ModalAnimalDetail } from './components/ModalAnimalDetail';
 import { ModalPrintLabel } from './components/ModalPrintLabel';
 import { ModalReportPDF } from './components/ModalReportPDF';
 import { playScanBeep } from './utils/audio';
+import { fetchCentralData, saveCentralData } from './services/api';
 
 export const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(true);
   const [currentView, setCurrentView] = useState<string>('dashboard');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Scanner flow target
   const [scanActionTarget, setScanActionTarget] = useState<'detail' | 'timbang' | 'obat'>('detail');
 
-  // Load from localStorage or start empty
+  // Centralized state
   const [animals, setAnimals] = useState<Animal[]>(() => {
     try {
       const saved = localStorage.getItem('ternakpro_animals');
@@ -43,22 +45,37 @@ export const App: React.FC = () => {
     }
   });
 
-  // Persist to localStorage whenever data changes
+  // Pull latest data from central cloud database on mount & periodically
   useEffect(() => {
-    try {
-      localStorage.setItem('ternakpro_animals', JSON.stringify(animals));
-    } catch (e) {
-      console.error('Error saving animals to localStorage:', e);
-    }
-  }, [animals]);
+    let mounted = true;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('ternakpro_activities', JSON.stringify(activities));
-    } catch (e) {
-      console.error('Error saving activities to localStorage:', e);
+    async function syncFromCloud() {
+      if (!isLoggedIn) return;
+      setIsSyncing(true);
+      const cloudData = await fetchCentralData();
+      if (mounted && cloudData) {
+        setAnimals(cloudData.animals);
+        setActivities(cloudData.activities);
+      }
+      if (mounted) setIsSyncing(false);
     }
-  }, [activities]);
+
+    // Initial fetch
+    syncFromCloud();
+
+    // Background polling every 8 seconds for real-time multi-device sync
+    const interval = setInterval(syncFromCloud, 8000);
+
+    // Sync on window focus
+    const onFocus = () => syncFromCloud();
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isLoggedIn]);
 
   // Modal states
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
@@ -68,10 +85,18 @@ export const App: React.FC = () => {
   // Active animal for form actions (timbang, obat)
   const [activeAnimalForForm, setActiveAnimalForForm] = useState<Animal | undefined>(undefined);
 
+  // Helper to persist to both cloud and local cache
+  const updateAndSync = async (newAnimals: Animal[], newActivities: Activity[]) => {
+    setAnimals(newAnimals);
+    setActivities(newActivities);
+    setIsSyncing(true);
+    await saveCentralData(newAnimals, newActivities);
+    setIsSyncing(false);
+  };
+
   // Handle new animal registration
-  const handleSaveNewAnimal = (newAnimal: Animal, printImmediate: boolean) => {
-    const updated = [newAnimal, ...animals];
-    setAnimals(updated);
+  const handleSaveNewAnimal = async (newAnimal: Animal, printImmediate: boolean) => {
+    const updatedAnimals = [newAnimal, ...animals];
 
     // Prepend new activity
     const newAct: Activity = {
@@ -91,7 +116,9 @@ export const App: React.FC = () => {
       badgeVariant: 'green',
       actionText: 'Label Dicetak'
     };
-    setActivities([newAct, ...activities]);
+    const updatedActivities = [newAct, ...activities];
+
+    await updateAndSync(updatedAnimals, updatedActivities);
 
     if (printImmediate) {
       setPrintableAnimal(newAnimal);
@@ -101,9 +128,8 @@ export const App: React.FC = () => {
   };
 
   // Handle save weight log
-  const handleSaveWeight = (updatedAnimal: Animal) => {
-    const updated = animals.map(a => a.id === updatedAnimal.id ? updatedAnimal : a);
-    setAnimals(updated);
+  const handleSaveWeight = async (updatedAnimal: Animal) => {
+    const updatedAnimals = animals.map(a => a.id === updatedAnimal.id ? updatedAnimal : a);
 
     const newAct: Activity = {
       id: `act-${Date.now()}`,
@@ -122,14 +148,15 @@ export const App: React.FC = () => {
       badgeVariant: 'green',
       actionText: 'Lihat Kartu >'
     };
-    setActivities([newAct, ...activities]);
+    const updatedActivities = [newAct, ...activities];
+
+    await updateAndSync(updatedAnimals, updatedActivities);
     setCurrentView('ternak');
   };
 
   // Handle save medication log
-  const handleSaveMedication = (updatedAnimal: Animal) => {
-    const updated = animals.map(a => a.id === updatedAnimal.id ? updatedAnimal : a);
-    setAnimals(updated);
+  const handleSaveMedication = async (updatedAnimal: Animal) => {
+    const updatedAnimals = animals.map(a => a.id === updatedAnimal.id ? updatedAnimal : a);
 
     const newAct: Activity = {
       id: `act-${Date.now()}`,
@@ -151,30 +178,28 @@ export const App: React.FC = () => {
       badgeVariant: updatedAnimal.status === 'withdrawal' ? 'red' : 'green',
       actionText: 'Audit Residu >'
     };
-    setActivities([newAct, ...activities]);
+    const updatedActivities = [newAct, ...activities];
+
+    await updateAndSync(updatedAnimals, updatedActivities);
     setCurrentView('dashboard');
   };
 
   // Delete an animal
-  const handleDeleteAnimal = (animalId: string) => {
-    const updated = animals.filter(a => a.id !== animalId);
-    setAnimals(updated);
+  const handleDeleteAnimal = async (animalId: string) => {
+    const updatedAnimals = animals.filter(a => a.id !== animalId);
+    await updateAndSync(updatedAnimals, activities);
   };
 
   // Helper to load or clear demo data
-  const handleLoadDemoData = () => {
-    if (window.confirm('Muat data contoh demo ternak ke aplikasi?')) {
-      setAnimals(DEMO_ANIMALS);
-      setActivities(DEMO_ACTIVITIES);
+  const handleLoadDemoData = async () => {
+    if (window.confirm('Muat data contoh demo ternak ke akun terpusat? (Akan tersinkron ke semua device)')) {
+      await updateAndSync(DEMO_ANIMALS, DEMO_ACTIVITIES);
     }
   };
 
-  const handleClearAllData = () => {
-    if (window.confirm('Hapus SEMUA data ternak dan aktivitas? Data akan kembali kosong.')) {
-      setAnimals([]);
-      setActivities([]);
-      localStorage.removeItem('ternakpro_animals');
-      localStorage.removeItem('ternakpro_activities');
+  const handleClearAllData = async () => {
+    if (window.confirm('Hapus SEMUA data ternak dan aktivitas dari akun terpusat? Data di semua device akan kembali kosong.')) {
+      await updateAndSync([], []);
     }
   };
 
@@ -203,6 +228,7 @@ export const App: React.FC = () => {
       {/* Top Navigation */}
       <Navbar
         currentView={currentView}
+        isSyncing={isSyncing}
         onNavigate={(v) => {
           setScanActionTarget('detail');
           setCurrentView(v);
@@ -210,11 +236,12 @@ export const App: React.FC = () => {
         onLogout={() => setIsLoggedIn(false)}
       />
 
-      {/* Top Banner Options: Clear / Demo options bar */}
+      {/* Top Banner Options: Multi-Device Shared Account Status */}
       <div className="bg-white border-b border-gray-200/60 px-4 py-1.5 text-xs text-gray-500">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <span className="text-[11px] font-medium text-gray-600">
-            📊 Database Kandang: <strong className="text-gray-900">{animals.length} Ekor</strong> (Tersimpan otomatis di browser)
+          <span className="text-[11px] font-medium text-gray-600 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Akun Terpusat: <strong className="text-gray-900">{animals.length} Ekor</strong> (Sinkron otomatis HP & PC)
           </span>
           <div className="flex items-center gap-2">
             {animals.length === 0 ? (

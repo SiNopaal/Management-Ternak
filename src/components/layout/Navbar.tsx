@@ -1,14 +1,20 @@
 import React from 'react';
 import { TernakLogo } from '../TernakLogo';
-import { Bell, LogOut, CheckCircle2 } from 'lucide-react';
+import { Bell, LogOut, Cloud, RefreshCw } from 'lucide-react';
 
 interface NavbarProps {
   currentView: string;
+  isSyncing: boolean;
   onNavigate: (view: string) => void;
   onLogout: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onLogout }) => {
+export const Navbar: React.FC<NavbarProps> = ({ 
+  currentView, 
+  isSyncing, 
+  onNavigate, 
+  onLogout 
+}) => {
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200/80 px-4 sm:px-6 py-3">
       <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -20,11 +26,12 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onLogou
               <span className="font-extrabold text-gray-900 text-base sm:text-lg tracking-tight">
                 TernakPro
               </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
             </div>
-            <p className="text-[11px] text-gray-500 font-medium hidden sm:block">
-              Kandang Utama • Online (Sesi Aktif)
-            </p>
+            <div className="flex items-center gap-1.5 text-[11px] text-gray-500 font-medium">
+              <Cloud size={12} className={isSyncing ? 'text-amber-500 animate-spin' : 'text-emerald-600'} />
+              <span>{isSyncing ? 'Menyinkronkan cloud...' : 'Akun Terpusat • Sinkron Semua Device'}</span>
+            </div>
           </div>
         </div>
 
