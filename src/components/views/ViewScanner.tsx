@@ -7,13 +7,17 @@ import {
   AlertTriangle, 
   QrCode, 
   History, 
-  Camera,
-  Search,
-  Plus,
-  Video,
-  VideoOff
+  Camera, 
+  Search, 
+  Plus, 
+  Video, 
+  VideoOff,
+  Volume2,
+  VolumeX,
+  Sparkles
 } from 'lucide-react';
 import { Animal } from '../../types';
+import { playScanBeep } from '../../utils/audio';
 
 interface ViewScannerProps {
   animals: Animal[];
@@ -27,11 +31,13 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
   onGoToAdd
 }) => {
   const [flashOn, setFlashOn] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [manualCode, setManualCode] = useState('');
   const [manualError, setManualError] = useState('');
   const [detectedIndex, setDetectedIndex] = useState(0);
   const [useRealCamera, setUseRealCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [showScanSuccessBanner, setShowScanSuccessBanner] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -68,6 +74,17 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
     };
   }, [useRealCamera]);
 
+  const triggerBeepAndSuccess = (animal: Animal) => {
+    if (soundEnabled) {
+      playScanBeep('success');
+    }
+    setShowScanSuccessBanner(true);
+    setTimeout(() => {
+      setShowScanSuccessBanner(false);
+      onSelectAnimal(animal);
+    }, 400);
+  };
+
   const handleManualLookup = (e: React.FormEvent) => {
     e.preventDefault();
     setManualError('');
@@ -75,10 +92,15 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
 
     const found = animals.find(a => a.eartag.toLowerCase() === manualCode.trim().toLowerCase());
     if (found) {
-      onSelectAnimal(found);
+      triggerBeepAndSuccess(found);
     } else {
       setManualError(`Nomor eartag "${manualCode}" belum terdaftar.`);
     }
+  };
+
+  const handleSimulateScan = () => {
+    if (!detectedAnimal) return;
+    triggerBeepAndSuccess(detectedAnimal);
   };
 
   return (
@@ -88,10 +110,27 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
           <span className="text-xs font-bold uppercase tracking-wider text-gray-800">
-            {useRealCamera ? 'KAMERA FISIK AKTIF' : 'KAMERA AKTIF (SIMULASI)'}
+            {useRealCamera ? 'KAMERA FISIK' : 'KAMERA AKTIF'}
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Sound Notification Toggle */}
+          <button
+            onClick={() => {
+              const nextState = !soundEnabled;
+              setSoundEnabled(nextState);
+              if (nextState) playScanBeep('double');
+            }}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${
+              soundEnabled
+                ? 'bg-[#E6F4EA] text-[#1E7E34] border-emerald-300'
+                : 'bg-gray-100 text-gray-400 border-gray-200'
+            }`}
+            title={soundEnabled ? 'Notifikasi Bunyi Aktif (Klik untuk mute)' : 'Notifikasi Bunyi Mati'}
+          >
+            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          </button>
+
           <button
             onClick={() => setUseRealCamera(!useRealCamera)}
             className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
@@ -119,7 +158,10 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
 
           {animals.length > 1 && (
             <button
-              onClick={() => setDetectedIndex(i => i + 1)}
+              onClick={() => {
+                setDetectedIndex(i => i + 1);
+                if (soundEnabled) playScanBeep('double');
+              }}
               className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 flex items-center justify-center text-gray-700 transition"
               title="Pindah Target Scan Ternak Lain"
             >
@@ -136,12 +178,24 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
         </div>
       )}
 
+      {/* Floating Success Sound Toast */}
+      {showScanSuccessBanner && (
+        <div className="bg-emerald-600 text-white py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg animate-bounce">
+          <CheckCircle2 size={16} />
+          <span>BEEP! Barcode {detectedAnimal?.eartag} Berhasil Terpindai</span>
+        </div>
+      )}
+
       <p className="text-xs text-gray-600 leading-relaxed">
         Posisikan kode QR atau barcode eartag ternak tepat di dalam kotak fokus.
       </p>
 
       {/* Camera Viewfinder Box */}
-      <div className="relative aspect-4/3 w-full rounded-2xl overflow-hidden shadow-lg border border-gray-800 bg-neutral-900">
+      <div 
+        onClick={handleSimulateScan}
+        className="relative aspect-4/3 w-full rounded-2xl overflow-hidden shadow-lg border border-gray-800 bg-neutral-900 cursor-pointer group"
+        title="Klik untuk memindai / trigger beep scanner"
+      >
         {useRealCamera ? (
           <video
             ref={videoRef}
@@ -154,7 +208,7 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
           <img
             src="https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?auto=format&fit=crop&w=800&q=80"
             alt="Eartag Viewfinder"
-            className="w-full h-full object-cover filter brightness-90"
+            className="w-full h-full object-cover filter brightness-90 group-hover:brightness-95 transition"
           />
         )}
 
@@ -170,7 +224,7 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
 
           <div className="absolute bottom-4 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full flex items-center gap-1.5 text-white text-xs font-semibold">
             <QrCode size={14} className="text-[#A3E635]" />
-            <span>Arahkan kamera ke QR eartag ternak</span>
+            <span>Ketuk layar untuk trigger pemindaian barcode</span>
           </div>
         </div>
       </div>
@@ -196,7 +250,7 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
           </div>
 
           <button
-            onClick={() => onSelectAnimal(detectedAnimal)}
+            onClick={() => triggerBeepAndSuccess(detectedAnimal)}
             className="bg-[#27532B] hover:bg-[#1E4122] text-white px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition shrink-0 active:scale-95 shadow-sm"
           >
             Buka <ArrowRight size={15} />
@@ -275,7 +329,7 @@ export const ViewScanner: React.FC<ViewScannerProps> = ({
             {animals.slice(0, 3).map((animal, idx) => (
               <div
                 key={animal.id}
-                onClick={() => onSelectAnimal(animal)}
+                onClick={() => triggerBeepAndSuccess(animal)}
                 className="bg-white hover:bg-gray-50 border border-gray-200/80 rounded-xl p-3 flex items-center justify-between cursor-pointer transition shadow-xs"
               >
                 <div className="flex items-center gap-3">

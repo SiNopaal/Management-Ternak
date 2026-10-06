@@ -15,6 +15,7 @@ import { ViewReports } from './components/views/ViewReports';
 import { ModalAnimalDetail } from './components/ModalAnimalDetail';
 import { ModalPrintLabel } from './components/ModalPrintLabel';
 import { ModalReportPDF } from './components/ModalReportPDF';
+import { playScanBeep } from './utils/audio';
 
 export const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(true);
@@ -179,6 +180,7 @@ export const App: React.FC = () => {
 
   // Scanner select handler based on scanActionTarget
   const handleScanSelectAnimal = (animal: Animal) => {
+    playScanBeep('success');
     if (scanActionTarget === 'timbang') {
       setActiveAnimalForForm(animal);
       setCurrentView('timbang');
